@@ -1,0 +1,55 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Setup environment variables
+        run: |
+          # Create .env.production file
+          echo "VITE_APPWRITE_ENDPOINT=${{ secrets.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1' }}" > .env.production
+          echo "VITE_APPWRITE_PROJECT_ID=${{ secrets.APPWRITE_PROJECT_ID }}" >> .env.production
+          echo "VITE_APPWRITE_PROJECT_NAME=${{ secrets.APPWRITE_PROJECT_NAME || 'movie_app' }}" >> .env.production
+          echo "VITE_APPWRITE_DATABASE_ID=${{ secrets.APPWRITE_DATABASE_ID }}" >> .env.production
+          echo "VITE_APPWRITE_COLLECTION_ID=${{ secrets.APPWRITE_COLLECTION_ID }}" >> .env.production
+          
+          # Only add TMDB token if secret exists
+          if [ -n "${{ secrets.TMDB_API_TOKEN }}" ]; then
+            echo "VITE_TMDB_API_TOKEN=${{ secrets.TMDB_API_TOKEN }}" >> .env.production
+          else
+            echo "WARNING: TMDB_API_TOKEN secret not set" >&2
+          fi
+      
+      - name: Build project
+        run: npm run build
+        env:
+          NODE_ENV: production
+      
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
