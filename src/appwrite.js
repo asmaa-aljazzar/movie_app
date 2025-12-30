@@ -1,59 +1,52 @@
-// appwrite.js - Fixed to track movies, not search terms
+import { Client, ID, Query , Databases} from "appwrite";
+
+const PROJECT_ID = import.meta.env.VITE_APPWRITE_PROJECT_ID;
+const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
+const COLLECTION_ID = import.meta.env.VITE_APPWRITE_COLLECTION_ID;
+const ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT;
+
+const client = new Client()// from appwrite.
+	.setEndpoint(ENDPOINT) // API Endpoint
+	.setProject(PROJECT_ID);
+
+const database = new Databases(client);
 export const updateSearchCount = async (searchTerm, movie) => {
-  try {
-    // We'll track movies by their ID, not by search term
-    const searches = JSON.parse(localStorage.getItem('movie_searches') || '[]');
-    
-    // Find if this movie already exists (by movie ID)
-    const existing = searches.find(s => s.movie_id === movie.id);
-    
-    if (existing) {
-      // Movie already tracked - increase count
-      existing.count += 1;
-      existing.lastSearched = Date.now();
-    } else {
-      // New movie - add it
-      searches.push({
-        movie_id: movie.id,
-        movie_title: movie.title || movie.original_title || 'Unknown',
-        poster_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
-        release_date: movie.release_date,
-        vote_average: movie.vote_average,
-        count: 1,
-        lastSearched: Date.now()
-      });
-    }
-    
-    // Keep only top 100 movies
-    if (searches.length > 100) {
-      searches.sort((a, b) => b.count - a.count);
-      searches.length = 100;
-    }
-    
-    localStorage.setItem('movie_searches', JSON.stringify(searches));
-  } catch (error) {
-    console.log('Error saving search:', error);
-  }
-};
+	// 1. Use Appwrite SDK/API to check if the search term exist in the database.
+	try {
+		// want list of documents in this table inside this database matching what we have in database with what the use is waiting for.
+		const result = await database.listDocuments(DATABASE_ID, COLLECTION_ID, [
+			Query.equal('searchTerm', searchTerm)
+		]);
+		// 2. If it does, update the count.
+		if (result.documents.length > 0) {
+			const doc = result.documents[0];
+			// update the count
+			await database.updateDocument(DATABASE_ID, COLLECTION_ID, doc.$id, {
+				count: doc.count + 1
+			});
+		}
+		// 3. If it doesn't, create a new document with the search term and count and count as 1.
+		else {
+			await database.createDocument (DATABASE_ID, COLLECTION_ID, ID.unique (), {
+				searchTerm,
+				count: 1,
+				movie_id: movie.id,
+				poster_url: `https://image.tmdb.org/t/p/w500${movie.poster_path}`,
+			})
+		}
+	} catch (error) {
+		console.log(error);
+	}
+}
 
 export const getTrendingMovies = async () => {
-  try {
-    const searches = JSON.parse(localStorage.getItem('movie_searches') || '[]');
-    
-    // Return movies sorted by count (most searched first)
-    return searches
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
-      .map(movie => ({
-        id: movie.movie_id,
-        title: movie.movie_title,
-        poster_path: movie.poster_url ? movie.poster_url.replace('https://image.tmdb.org/t/p/w500', '') : null,
-        poster_url: movie.poster_url,
-        release_date: movie.release_date,
-        vote_average: movie.vote_average,
-        count: movie.count
-      }));
-  } catch {
-    return [];
-  }
-};
+	try {
+		const result = await database.listDocuments (DATABASE_ID, COLLECTION_ID, [
+			Query.limit (5),
+			Query.orderDesc ("count"),
+		])
+		return result.documents;
+	} catch (error) {
+		console.error (error);
+	}
+}
